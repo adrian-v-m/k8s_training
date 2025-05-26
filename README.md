@@ -18,7 +18,7 @@ Connect to cluster, build a Docker image, deploy the job.
 
 ### Connecting to the cluster
 
-A `kubeconfig` file (usually `kubeConfig.yaml`) with connection details for the cluster is needed.
+A `kubeconfig` file with connection details for the cluster is needed.
 
 ```bash
 export KUBECONFIG=kubeConfig.yaml
@@ -39,12 +39,16 @@ For non-local clusters, push this image to a container registry the cluster can 
 
 The `.env` file in `trainer/` contains the Hugging Face token (gitignored).
 
-Run the setup script:
+Change the directory to `trainer/`:
 
 ```bash
 cd trainer/
+```
+
+Run the setup script:
+
+```bash
 ./setup-env.sh
-cd ..
 ```
 
 This creates a Kubernetes secret called `hf-secrets` with the token.
@@ -54,11 +58,37 @@ This creates a Kubernetes secret called `hf-secrets` with the token.
 Deploy the training job:
 
 ```bash
-kubectl apply -f trainer/fine_tune_job.yaml
+kubectl apply -f fine_tune_job.yaml
 ```
 
 The job automatically downloads the model and dataset using the token.
 
+## Distributed training approach
+
+This setup uses **data distributed parallel (DDP)** training with automatic dataset splitting across nodes. Here's how it works:
+
+### Data distribution strategy
+
+The `model_train_lora.py` script automatically detects when running in a distributed environment by checking for `RANK` and `WORLD_SIZE` environment variables (set by Kubeflow). When detected, it uses `split_dataset_by_node` from Hugging Face datasets to partition the training data:
+
+```python
+# From model_train_lora.py
+if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+    RANK, WORLD_SIZE = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
+    train_data = split_dataset_by_node(train_data, rank=RANK, world_size=WORLD_SIZE)
+    eval_data = split_dataset_by_node(eval_data, rank=RANK, world_size=WORLD_SIZE)
+```
+
+This ensures each node processes a unique subset of the data:
+- **Node 0 (master)**: Gets samples 0, 2, 4, 6, ... (even indices)
+- **Node 1 (worker)**: Gets samples 1, 3, 5, 7, ... (odd indices)
+
+### Model synchronisation
+
+PyTorch `DistributedDataParallel` handles model parameter syncying:
+- each node has a copy of the full model
+- during forward pass, each node processes a data subset
+- during backward pass, gradients are averaged across the 2 nodes and they are synched across the nodes
 ## Running distributed training (manual way)
 
 **Note**: This is the manual way to run training inside containers. Great for experimenting, debugging, or when control over each container is needed. In production, this process would be automated.
@@ -70,8 +100,6 @@ Once pods are running, manually start training using `kubectl exec`:
 **1. Copy the updated script (if changed):**
 
 ```bash
-export KUBECONFIG=kubeConfig.yaml
-
 kubectl cp trainer/model_train_lora.py ftjb-master-0:/app/model_train_lora.py -c pytorch
 kubectl cp trainer/model_train_lora.py ftjb-worker-0:/app/model_train_lora.py -c pytorch
 ```
@@ -109,15 +137,15 @@ The master pod is the meeting point, worker finds it through Kubernetes networki
 ## Configuration
 
 - **`HF_TOKEN`**: Hugging Face token
-  - lives in `trainer/.env`
-  - loaded into Kubernetes as secret `hf-secrets` by `trainer/setup-env.sh`
+  - lives in `.env`
+  - loaded into Kubernetes as secret `hf-secrets` by `setup-env.sh`
   - used by containers to download models/datasets
-- **`MODEL_URI` & `DATASET_REPO_ID`**: hardcoded in `trainer/fine_tune_job.yaml`
+- **`MODEL_URI` & `DATASET_REPO_ID`**: hardcoded in `fine_tune_job.yaml`
 
 ## Security
 
-- `HF_TOKEN` stays in local `trainer/.env` (gitignored) and as Kubernetes secret
-- `trainer/setup-env.sh` handles secure transfer to cluster
+- `HF_TOKEN` stays in local `.env` (gitignored) and as Kubernetes secret
+- `setup-env.sh` handles secure transfer to cluster
 
 ## Monitoring
 
