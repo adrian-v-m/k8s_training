@@ -1,0 +1,15 @@
+# Environment variables file containing sensitive information
+.env
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db 

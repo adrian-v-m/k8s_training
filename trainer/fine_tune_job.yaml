@@ -1,0 +1,141 @@
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: ftjb
+spec:
+  nprocPerNode: "1"
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      template:
+        metadata: {}
+        spec:
+          containers:
+          - args: [ "while true; do sleep 30; done;" ]
+            command: [ "/bin/bash", "-c", "--" ]
+            image: quay.io/oriedge/trainer-huggingface:test
+            name: pytorch
+            resources:
+              limits:
+                cpu: "100"
+                memory: 200G
+                nvidia.com/gpu: "1"
+              requests:
+                cpu: "8"
+                memory: 10G
+                nvidia.com/gpu: "1"
+            terminationMessagePolicy: FallbackToLogsOnError
+            volumeMounts:
+            - mountPath: /workspace
+              name: storage-initializer
+          initContainers:
+          - args:
+            - --model_provider
+            - hf
+            - --model_provider_parameters
+            - '{"model_uri":"meta-llama/Llama-3.2-1B-Instruct","transformer_type":"AutoModelForCausalLM","access_token":"$(HF_TOKEN)","num_labels":null}'
+            - --dataset_provider
+            - hf
+            - --dataset_provider_parameters
+            - '{"repo_id":"rohanbalkondekar/HealthCareFacts_Small","access_token":"$(HF_TOKEN)","split":null}'
+            envFrom:
+            - secretRef:
+                name: hf-secrets
+            image: quay.io/oriedge/trainer-storage-initializer:0.9.10
+            name: storage-initializer
+            resources: {}
+            terminationMessagePolicy: FallbackToLogsOnError
+            volumeMounts:
+            - mountPath: /workspace
+              name: storage-initializer
+          volumes:
+          - name: storage-initializer
+            persistentVolumeClaim:
+              claimName: pvc-ftjb
+    Worker:
+      replicas: 1
+      template:
+        metadata: {}
+        spec:
+          containers:
+          - args: [ "while true; do sleep 30; done;" ]
+            command: [ "/bin/bash", "-c", "--" ]
+            image: quay.io/oriedge/trainer-huggingface:test
+            name: pytorch
+            resources:
+              limits:
+                cpu: "100"
+                memory: 200G
+                nvidia.com/gpu: "1"
+              requests:
+                cpu: "8"
+                memory: 10G
+                nvidia.com/gpu: "1"
+            terminationMessagePolicy: FallbackToLogsOnError
+            volumeMounts:
+            - mountPath: /workspace
+              name: storage-initializer
+          initContainers:
+          - args:
+            - --model_provider
+            - hf
+            - --model_provider_parameters
+            - '{"model_uri":"meta-llama/Llama-3.2-1B-Instruct","transformer_type":"AutoModelForCausalLM","access_token":"$(HF_TOKEN)","num_labels":null}'
+            - --dataset_provider
+            - hf
+            - --dataset_provider_parameters
+            - '{"repo_id":"rohanbalkondekar/HealthCareFacts_Small","access_token":"$(HF_TOKEN)","split":null}'
+            envFrom:
+            - secretRef:
+                name: hf-secrets
+            image: quay.io/oriedge/trainer-storage-initializer:0.9.10
+            name: storage-initializer
+            resources: {}
+            terminationMessagePolicy: FallbackToLogsOnError
+            volumeMounts:
+            - mountPath: /workspace
+              name: storage-initializer
+          volumes:
+          - name: storage-initializer
+            persistentVolumeClaim:
+              claimName: pvc-ftjb
+  runPolicy:
+    suspend: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  finalizers:
+  - kubernetes.io/pvc-protection
+  name: pvc-ftjb
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+  volumeMode: Filesystem
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cm-creator
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cm-creator-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cm-creator
+subjects:
+- kind: ServiceAccount
+  name: default 
