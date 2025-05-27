@@ -100,8 +100,8 @@ Once pods are running, manually start training using `kubectl exec`:
 **1. Copy the updated script (if changed):**
 
 ```bash
-kubectl cp trainer/model_train_lora.py ftjb-master-0:/app/model_train_lora.py -c pytorch
-kubectl cp trainer/model_train_lora.py ftjb-worker-0:/app/model_train_lora.py -c pytorch
+kubectl cp model_train_lora.py ftjb-master-0:/app/model_train_lora.py -c pytorch
+kubectl cp model_train_lora.py ftjb-worker-0:/app/model_train_lora.py -c pytorch
 ```
 
 **2. Kill old training processes:**
