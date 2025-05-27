@@ -1,6 +1,6 @@
 # Kubernetes PyTorchJob trainer
 
-Everything needed to run distributed fine-tuning jobs using Kubeflow PyTorchJob.
+Everything needed to run distributed fine-tuning jobs using Kubeflow PyTorchJob. Note that this is just a PoC so it's not suitable for production. 
 
 ## What's in here
 
