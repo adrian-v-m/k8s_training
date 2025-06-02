@@ -10,26 +10,23 @@ flowchart TD
         KFP["Kubeflow Pipelines"]
         TO["Training Operator"]
         Kat["Katib HPO"]
-        Feast["Feast Feature Store"]
     end
 
     %% Storage and Registry
     subgraph SR["Storage and Registry"]
         Ceph["Ceph File System<br/>shared snapshots"]
         NVMe["NVMe drive<br/>per-node cache"]
-        GCS[("Cloud Storage<br/>model files")]
-        VReg["Vertex AI Model Registry"]
-        AR["Artifact Registry<br/>container images"]
+        GCS["Cloud Storage<br/>model files"]
+        VReg[("Vertex AI<br/>Model Registry")]
     end
 
     %% Compute
     subgraph GC["GPU Cluster 32 nodes"]
-        subgraph PT["Parallel Trials"]
-            T1["trial pod"]
-            Tn["more trials"]
-        end
         subgraph FCJ["Full-cluster Job"]
             L["32 training pods"]
+        end
+        subgraph PT["Parallel Trials"]
+            Trials["Trial 1, Trial 2, ..., Trial N"]
         end
     end
 
@@ -38,28 +35,57 @@ flowchart TD
         Nep["Neptune.ai"]
     end
 
-    %% Connections
+    %% Control-flow connections (solid arrows)
     KFP -->|submit PyTorchJob| TO
-    KFP -->|submit Katib Experiment| Kat
-    Kat --> TO
-    KFP --> Feast
+    KFP -->|start Katib Experiment| Kat
+    Kat -->|create PyTorchJobs| TO
+    TO -->|spawn & supervise| L
+    TO -->|spawn & supervise| Trials
+
+    %% Data-flow connections (dashed arrows)
+    Ceph -.->|stage dataset at job start| NVMe
+    NVMe -.->|flush checkpoints & logs| Ceph
+    Trials <-.->|read data & write checkpoints| NVMe
+    L <-.->|read data & write checkpoints| NVMe
+
+    Trials -.->|stream metrics| Nep
+    L -.->|stream metrics| Nep
+    NVMe -.->|final checkpoint upload| GCS
+    Ceph -.->|final checkpoint upload| GCS
+
+    %% Static connections
+    GCS -->|model file URIs| VReg
+
+    %% Colorful styling for better readability
+    style CP fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#01579b
+    style SR fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#4a148c
+    style GC fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px,color:#1b5e20
+    style PT fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100
+    style FCJ fill:#fff8e1,stroke:#f57f17,stroke-width:2px,color:#f57f17
+    style Track fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#880e4f
+
+    %% Node styling with contrasting text colors
+    style KFP fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#0d47a1
+    style TO fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#0d47a1
+    style Kat fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#0d47a1
     
-    Ceph <-->|asynchronous copy| NVMe
-    Ceph --> Feast
-    GCS --> VReg
+    style Ceph fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
+    style NVMe fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
+    style GCS fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
+    style VReg fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
     
-    TO --> T1
-    TO --> Tn
-    TO --> L
+    style Trials fill:#ffcc80,stroke:#f57c00,stroke-width:2px,color:#e65100
+    style L fill:#fff176,stroke:#f9a825,stroke-width:2px,color:#f57f17
     
-    T1 --> NVMe
-    Tn --> NVMe
-    L --> NVMe
-    
-    T1 --> Nep
-    Tn --> Nep
-    L --> Nep
+    style Nep fill:#f8bbd9,stroke:#c2185b,stroke-width:2px,color:#880e4f
+
+    %% Link styling for better contrast
+    linkStyle default stroke:#2c3e50,stroke-width:3px
 ```
+
+**Arrow Legend:**
+- **Solid arrows (→)**: Control-flow connections - orchestration, job creation, and management commands
+- **Dashed arrows (⇢)**: Data-flow connections - actual data movement, checkpoints, and metrics streaming
 
 ## 1.1. Hardware Architecture
 
@@ -144,7 +170,7 @@ KFP pipelines are not necessary since these are single-node experiments where th
 
 4. **Training** - Script runs on local NVMe data. Logs `loss`, `perplexity`, `tokens/second` to Neptune.ai. Checkpoints go to `/nvme/ckpt` (NVMe PV).
 
-5. **Background sync** - Side-car container copies new checkpoints to CephFS every 10 min, then to `gs://checkpoints/<run-id>/` (GCS).
+5. **Background sync** - Side-car container copies new checkpoints in an async way to CephFS every 10 min, then to `gs://checkpoints/<run-id>/` (GCS).
 
 6. **Fault Tolerance** - Independent trials minimise fault impact; failed trials are automatically retried by Katib with configurable `maxFailedTrialCount`.
 
@@ -385,13 +411,33 @@ spec:
 
 ```mermaid
 flowchart TD
-  A["Feast materialise<br/>snapshot 2025-05"] --> B["Tokenise and pack"]
-  B --> C["Data sharding<br/>32 NVMe PVs"]
-  C --> D["Train model<br/>PyTorchJob"]
-  D --> E["Evaluate"]
-  E --> F["Register in Vertex AI"]
-  D -->|metrics| N["Neptune.ai"]
-  D -->|checkpoints| G["CephFS + GCS backup"]
-  F --> H["Cleanup resources"]
+  A["🗂️ Data preparation<br/>dataset staging"] --> B["🔤 Tokenise and pack<br/>text preprocessing"]
+  B --> C["📊 Data sharding<br/>32 NVMe PVs<br/>distributed storage"]
+  C --> D["🚀 Train model<br/>PyTorchJob<br/>distributed training"]
+  D --> E["📈 Evaluate<br/>model validation<br/>performance metrics"]
+  E --> F["📦 Register in Vertex AI<br/>model versioning<br/>deployment ready"]
+  D -->|stream metrics| N["🌊 Neptune.ai<br/>experiment tracking"]
+  D -->|save checkpoints| G["💾 CephFS + GCS backup<br/>fault tolerance"]
+  F --> H["🧹 Cleanup resources<br/>cost optimization"]
+
+  %% Colorful styling for pipeline stages
+  style A fill:#e3f2fd,stroke:#1976d2,stroke-width:3px,color:#0d47a1
+  style B fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px,color:#4a148c
+  style C fill:#e8f5e8,stroke:#388e3c,stroke-width:3px,color:#1b5e20
+  style D fill:#fff3e0,stroke:#f57c00,stroke-width:3px,color:#e65100
+  style E fill:#fce4ec,stroke:#c2185b,stroke-width:3px,color:#880e4f
+  style F fill:#e0f2f1,stroke:#00796b,stroke-width:3px,color:#004d40
+  style N fill:#e1f5fe,stroke:#0288d1,stroke-width:3px,color:#01579b
+  style G fill:#f1f8e9,stroke:#689f38,stroke-width:3px,color:#33691e
+  style H fill:#fff8e1,stroke:#ffa000,stroke-width:3px,color:#ff6f00
+
+  %% Link styling for better contrast
+  linkStyle default stroke:#37474f,stroke-width:3px
+  linkStyle 5 stroke:#0288d1,stroke-width:3px,stroke-dasharray:5
+  linkStyle 6 stroke:#689f38,stroke-width:3px,stroke-dasharray:5
 ```
+
+**Pipeline Flow Legend:**
+- **Solid arrows (→)**: Sequential pipeline steps - main execution flow from data preparation to cleanup
+- **Dashed arrows (⇢)**: Parallel outputs - concurrent logging and backup operations during training
 
