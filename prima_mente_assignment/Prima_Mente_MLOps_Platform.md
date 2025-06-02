@@ -1,7 +1,7 @@
 # Large-Scale Training & Experimentation Platform
 *32-node H200 cluster, NVLink + InfiniBand, and the main assumption is that it's an on-prem cluster*
 
-## 1. System Diagram
+## 1. System diagram
 
 ```mermaid
 %%{init: {
@@ -98,7 +98,7 @@ flowchart TD
 - **Solid arrows (→)**: Control-flow connections - orchestration, job creation, and management commands
 - **Dashed arrows (⇢)**: Data-flow connections - actual data movement, checkpoints, and metrics streaming
 
-## 1.1. Hardware Architecture
+## 1.1. Hardware architecture
 
 **Cluster Specifications (32 nodes, 256 GPUs total):**
 
@@ -116,7 +116,7 @@ flowchart TD
 - GPU Direct RDMA for zero-copy data transfers
 - Kubernetes networking configured for RDMA containers
 
-## 2. Component Breakdown
+## 2. Component breakdown
 
 | Layer | Technology | Role |
 |-------|------------|------|
@@ -132,7 +132,7 @@ flowchart TD
 | **Container images** | Artifact Registry – private Docker registry. CI pipeline pushes images and writes the digest into the pipeline YAML to ensure immutability. | Vulnerability scan and signature validation are enabled on every push. |
 | **Monitoring** | Prometheus scrapes node exporters and NVIDIA DCGM exporter; Grafana displays dashboards. | Alertmanager sends alerts if GPU temperature exceeds limit or Ceph latency > 5 ms. |
 
-## 2.1. Advanced Data Management Strategy
+## 2.1. Advanced data management strategy
 
 **Two-Tier Storage Architecture:**
 
@@ -162,7 +162,7 @@ else
 fi
 ```
 
-## 3. Execution Plan
+## 3. Execution plan
 
 ### A. Multiple small parallel experiments (Katib)
 
@@ -230,7 +230,7 @@ KFP pipeline is fully implemented for the multi-node PyTorch job. This training 
 
 11. **Cleanup**: job PVC and NVMe cache cleaned; cluster autoscaler may power down idle nodes.
 
-## 3.1. Advanced Fault Tolerance Mechanisms
+## 3.1. Advanced fault tolerance mechanisms
 
 **TorchElastic Configuration:**
 ```yaml
@@ -252,7 +252,7 @@ spec:
 4. **Checkpoint corruption**: Automatic fallback to previous checkpoint
 5. **Cluster maintenance**: Graceful shutdown with `terminationGracePeriodSeconds: 300`
 
-## 4. Justification for Selected Tools
+## 4. Justification for selected tools
 
 - **Kubeflow Pipelines** – provides a reproducible, versioned description of ML workflows and stores metadata and artefacts for every step.
 - **Training Operator + PyTorchJob** – encapsulates best practices for distributed PyTorch on Kubernetes, including elastic policies and automatic rendezvous.
@@ -266,9 +266,9 @@ spec:
 - **Artifact Registry** – central, signed image store via CI; every pipeline component image is immutable and scanned for vulnerabilities.
 - **Monitoring** | NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress.
 
-## 5. Performance Optimisations
+## 5. Performance optimisations
 
-### 5.1. Training Optimisations
+### 5.1. Training optimisations
 
 | Optimisation | Implementation | Expected Gain |
 |-------------|----------------|---------------|
@@ -279,7 +279,7 @@ spec:
 | **NUMA Optimisation** | CPU affinity binding to local memory | Minimise memory access latency |
 | **GPUDirect Storage** | Direct GPU-to-NVMe data path | Bypass CPU for data reads |
 
-### 5.2. Network Optimisations
+### 5.2. Network optimisations
 
 ```yaml
 # NCCL Environment Variables
@@ -296,9 +296,9 @@ env:
   value: "1"
 ```
 
-## 6. Security Framework
+## 6. Security framework
 
-### 6.1. Multi-Layer Security
+### 6.1. Multi-Layer security
 
 | Layer | Implementation | Purpose |
 |-------|----------------|---------|
@@ -309,7 +309,7 @@ env:
 | **Data Security** | Encryption at rest + in transit | Data protection |
 | **Secret Management** | Kubernetes Secrets + rotation | Secure credential handling |
 
-### 6.2. Network Policies
+### 6.2. Network policies
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -337,9 +337,9 @@ spec:
       port: 443  # GCS HTTPS
 ```
 
-## 7. Comprehensive Monitoring
+## 7. Comprehensive monitoring
 
-### 7.1. Infrastructure Monitoring
+### 7.1. Infrastructure monitoring
 
 **Prometheus Metrics:**
 - **GPU Metrics**: Utilisation, memory, temperature, power consumption
@@ -374,7 +374,7 @@ spec:
 ```
 
 
-## 8. Additional Considerations
+## 8. Additional considerations
 
 | Topic | Implementation |
 |-------|----------------|
@@ -384,7 +384,7 @@ spec:
 | **Scalability** | Cluster can expand to 64 nodes by updating the `replicas` field. If Ceph cannot meet read bandwidth (including if per-node read > 25-30 GB/s), a future upgrade to DAOS or Lustre is possible without pipeline changes. Horizontal Pod Autoscaler for supporting services. |
 | **Cost** | Torch Elastic permits use of spot GPU nodes; checkpoints every 15 min to avoid > 15 min loss. Weekly CronJob cleans NVMe caches older than 7 days. Cluster autoscaling with node auto-provisioning and preemptible instances. |
 
-### 8.1. Cost Optimisation Strategies
+### 8.1. Cost optimisation strategies
 
 **Preemptible Instance Configuration:**
 ```yaml
@@ -418,7 +418,7 @@ spec:
             - find /nvme -type f -mtime +7 -delete
 ```
 
-### Example Pipeline DAG (rendered by Kubeflow)
+### Example Kubeflow pipeline DAG
 
 ```mermaid
 %%{init: {
@@ -463,3 +463,37 @@ flowchart TD
 - **Solid arrows (→)**: Sequential pipeline steps - main execution flow from data preparation to cleanup
 - **Dashed arrows (⇢)**: Parallel outputs - concurrent logging and backup operations during training
 
+
+## Future potential improvements
+
+### 1. Pipeline Parallelism
+- **Function**: Splits a large model into sequential stages so each GPU processes different layers simultaneously, rather than replicating the entire model on every GPU.  
+- **Integration**:  
+  1. Add `--pipeline-parallel K` to the PyTorch training entry point.  
+  2. Existing `PyTorchJob` pods form stages.  
+  3. Torch Elastic handles dropped or added stage pods.  
+- **Value**:  
+  - Enables significantly larger models within the same 8 GPUs/node configuration.  
+  - Raises overall GPU usage by ~10 % compared to pure data parallel.  
+  - No changes to storage or orchestration required.
+
+### 2. KServe for Inference
+- **Function**: Deploys trained models as Kubernetes “InferenceService” objects that automatically scale GPUs to zero when idle and roll out new versions via traffic-splitting.  
+- **Integration**:  
+  1. After the final checkpoint lands in Cloud Storage, add a KServe manifest pointing to that URI.  
+  2. Knative autoscaling spins GPU pods up or down based on request volume.  
+- **Value**:  
+  - Eliminates manual inference serving.  
+  - Reuses the same container images from training.  
+  - Ensures zero-cost idle time.  
+  - Enables safe canary releases for new model versions.
+
+### 3. Feature Store (Feast)
+- **Function**: Version-tags every derived feature once (e.g., token counts, positional bins) in Parquet for offline and a key-value store for online; serves identical data to training and serving.  
+- **Integration**:  
+  1. Add a nightly `feast pushing` job that writes a snapshot to CephFS.  
+  2. Each trial or full-cluster run reads features from the cached snapshot on NVMe instead of recomputing.  
+- **Value**:  
+  - Reduces preprocessing significantly per trial since onlt copying NVMe files is needed. 
+  - Prevents drift between training and serving features.  
+  - Cuts redundant compute across hundreds of experiments.
