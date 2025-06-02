@@ -5,43 +5,60 @@
 
 ```mermaid
 flowchart TD
-  %% control plane
-  subgraph Kubeflow Control Plane
-    KFP[Kubeflow Pipelines] -->|submit PyTorchJob| TO[Training Operator]
-    KFP -->|submit Katib Experiment| Kat[Katib (HPO)]
-    Kat --> TO
-    KFP --> Feast[Feast Feature Store]
-  end
+    %% Control Plane
+    subgraph CP["Kubeflow Control Plane"]
+        KFP["Kubeflow Pipelines"]
+        TO["Training Operator"]
+        Kat["Katib HPO"]
+        Feast["Feast Feature Store"]
+    end
 
-  %% storage
-  subgraph Storage and Registry
-    Ceph[Ceph File System<br/>(shared, snapshots)] 
-    NVMe[NVMe drive<br/>(per-node cache)]
+    %% Storage and Registry
+    subgraph SR["Storage and Registry"]
+        Ceph["Ceph File System<br/>shared snapshots"]
+        NVMe["NVMe drive<br/>per-node cache"]
+        GCS[("Cloud Storage<br/>model files")]
+        VReg["Vertex AI Model Registry"]
+        AR["Artifact Registry<br/>container images"]
+    end
+
+    %% Compute
+    subgraph GC["GPU Cluster 32 nodes"]
+        subgraph PT["Parallel Trials"]
+            T1["trial pod"]
+            Tn["more trials"]
+        end
+        subgraph FCJ["Full-cluster Job"]
+            L["32 training pods"]
+        end
+    end
+
+    %% Tracking
+    subgraph Track["Tracking"]
+        Nep["Neptune.ai"]
+    end
+
+    %% Connections
+    KFP -->|submit PyTorchJob| TO
+    KFP -->|submit Katib Experiment| Kat
+    Kat --> TO
+    KFP --> Feast
+    
     Ceph <-->|asynchronous copy| NVMe
-    GCS[(Cloud Storage<br/>(model files))]
-    VReg[Vertex AI Model Registry]
-    AR[Artifact Registry<br/>(container images)]
     Ceph --> Feast
     GCS --> VReg
-  end
-
-  %% compute
-  subgraph GPU Cluster (32 nodes)
-    subgraph Parallel Trials
-      T1[trial pod] --> NVMe
-      Tn[…] --> NVMe
-    end
-    subgraph Full-cluster Job
-      L[32 training pods] --> NVMe
-    end
-  end
-  TO --> T1 & Tn & L
-
-  %% tracking
-  subgraph Tracking
-    Nep[Neptune.ai]
-  end
-  T1 & Tn & L --> Nep
+    
+    TO --> T1
+    TO --> Tn
+    TO --> L
+    
+    T1 --> NVMe
+    Tn --> NVMe
+    L --> NVMe
+    
+    T1 --> Nep
+    Tn --> Nep
+    L --> Nep
 ```
 
 ## 1.1. Hardware Architecture
@@ -210,6 +227,7 @@ spec:
 - **Neptune.ai** – captures metrics, parameters, and small files with minimal code; the back-end handles thousands of concurrent runs.
 - **Vertex AI Model Registry + GCS** – separates heavy binary storage (Cloud Storage) from catalogue metadata (Registry), providing access control and deployment history.
 - **Artifact Registry** – central, signed image store via CI; every pipeline component image is immutable and scanned for vulnerabilities.
+- **Monitoring** | NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and OSD queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress.
 
 ## 5. Performance Optimisations
 
@@ -366,14 +384,14 @@ spec:
 ### Example Pipeline DAG (rendered by Kubeflow)
 
 ```mermaid
-graph TD
-  A[Feast materialise<br/>(snapshot 2025-05)] --> B[Tokenise & pack]
-  B --> C[Data sharding<br/>(32 NVMe PVs)]
-  C --> D[Train model<br/>(PyTorchJob)]
-  D --> E[Evaluate]
-  E --> F[Register in Vertex AI]
-  D -->|metrics| N[Neptune.ai]
-  D -->|checkpoints| G[CephFS + GCS backup]
-  F --> H[Cleanup resources]
+flowchart TD
+  A["Feast materialise<br/>snapshot 2025-05"] --> B["Tokenise and pack"]
+  B --> C["Data sharding<br/>32 NVMe PVs"]
+  C --> D["Train model<br/>PyTorchJob"]
+  D --> E["Evaluate"]
+  E --> F["Register in Vertex AI"]
+  D -->|metrics| N["Neptune.ai"]
+  D -->|checkpoints| G["CephFS + GCS backup"]
+  F --> H["Cleanup resources"]
 ```
 
