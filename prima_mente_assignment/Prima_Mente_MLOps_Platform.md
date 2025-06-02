@@ -54,7 +54,7 @@ flowchart TD
 | **CPUs** | 128-core Intel Sapphire Rapids per node | Data preprocessing and GPU feeding |
 | **Memory** | 1.6 TB RAM per node | Massive dataset caching and preprocessing |
 | **Local Storage** | 1 TB NVMe SSD per node | High-speed local data cache (7-14 GB/s) |
-| **Interconnect** | InfiniBand for inter-node communication | NCCL-optimized for gradient synchronization |
+| **Interconnect** | InfiniBand for inter-node communication | NCCL-optimised for gradient synchronisation |
 | **Network** | RDMA-capable with GPU Direct support | Direct GPU-to-GPU communication across nodes |
 
 **Network Configuration:**
@@ -91,7 +91,7 @@ flowchart TD
 2. **High-Speed Cache (NVMe)**
    - 1 TB per node for ultra-fast local access
    - Automatic data staging with hash-based validation
-   - Background synchronization to durable storage
+   - Background synchronisation to durable storage
    - Local Persistent Volumes with node affinity
 
 **Data Staging Process:**
@@ -112,7 +112,7 @@ fi
 
 ### A. Multiple small parallel experiments (Katib)
 
-KFP pipelines are not necessary since these are single-node experiments where there is no need to containerize the steps of the training process. Instead, a single script that handles data pre-processing and model training is containerised and used to run in a training job.
+KFP pipelines are not necessary since these are single-node experiments where there is no need to containerise the steps of the training process. Instead, a single script that handles data pre-processing and model training is containerised and used to run in a training job.
 
 1. **Start** - AI researcher selects search space in the KFP UI and triggers HPO (Hyperparameter Optimisation) pipeline.
 
@@ -129,7 +129,7 @@ KFP pipelines are not necessary since these are single-node experiments where th
 
 5. **Background sync** - Side-car container copies new checkpoints to CephFS every 10 min, then to `gs://checkpoints/<run-id>/` (GCS).
 
-6. **Fault Tolerance** - Independent trials minimize fault impact; failed trials are automatically retried by Katib with configurable `maxFailedTrialCount`.
+6. **Fault Tolerance** - Independent trials minimise fault impact; failed trials are automatically retried by Katib with configurable `maxFailedTrialCount`.
 
 7. **Completion** - Katib returns best hyperparameter set; pipeline can optionally retrain the best configuration on more GPUs.
 
@@ -194,7 +194,7 @@ spec:
 **Recovery Strategies:**
 1. **Node failure**: TorchElastic continues with remaining nodes
 2. **Pod failure**: Kubernetes reschedules; job waits at rendezvous
-3. **Network partition**: NCCL timeout triggers re-initialization
+3. **Network partition**: NCCL timeout triggers re-initialisation
 4. **Checkpoint corruption**: Automatic fallback to previous checkpoint
 5. **Cluster maintenance**: Graceful shutdown with `terminationGracePeriodSeconds: 300`
 
@@ -211,20 +211,20 @@ spec:
 - **Vertex AI Model Registry + GCS** – separates heavy binary storage (Cloud Storage) from catalogue metadata (Registry), providing access control and deployment history.
 - **Artifact Registry** – central, signed image store via CI; every pipeline component image is immutable and scanned for vulnerabilities.
 
-## 5. Performance Optimizations
+## 5. Performance Optimisations
 
-### 5.1. Training Optimizations
+### 5.1. Training Optimisations
 
-| Optimization | Implementation | Expected Gain |
+| Optimisation | Implementation | Expected Gain |
 |-------------|----------------|---------------|
 | **Mixed Precision** | PyTorch AMP with FP16/BF16 | 2x training throughput |
 | **Gradient Compression** | NCCL with compression algorithms | 30-50% communication reduction |
 | **Data Loading** | Multi-process DataLoader with `num_workers=8` | Eliminate I/O bottlenecks |
 | **Memory Prefetching** | GPU memory prefetching for next batch | Overlap compute and data transfer |
-| **NUMA Optimization** | CPU affinity binding to local memory | Minimize memory access latency |
+| **NUMA Optimisation** | CPU affinity binding to local memory | Minimise memory access latency |
 | **GPUDirect Storage** | Direct GPU-to-NVMe data path | Bypass CPU for data reads |
 
-### 5.2. Network Optimizations
+### 5.2. Network Optimisations
 
 ```yaml
 # NCCL Environment Variables
@@ -248,7 +248,7 @@ env:
 | Layer | Implementation | Purpose |
 |-------|----------------|---------|
 | **Authentication** | Kubeflow + Istio + Google IAP | User identity verification |
-| **Authorization** | Kubernetes RBAC + Istio AuthPolicy | Resource access control |
+| **Authorisation** | Kubernetes RBAC + Istio AuthPolicy | Resource access control |
 | **Network Security** | Istio service mesh + NetworkPolicies | Traffic encryption and isolation |
 | **Container Security** | GKE Sandbox (gVisor) + minimal images | Container runtime isolation |
 | **Data Security** | Encryption at rest + in transit | Data protection |
@@ -287,10 +287,10 @@ spec:
 ### 7.1. Infrastructure Monitoring
 
 **Prometheus Metrics:**
-- **GPU Metrics**: Utilization, memory, temperature, power consumption
+- **GPU Metrics**: Utilisation, memory, temperature, power consumption
 - **Network Metrics**: InfiniBand throughput, packet loss, latency
 - **Storage Metrics**: CephFS latency, IOPS, throughput
-- **Node Metrics**: CPU, memory, disk utilization
+- **Node Metrics**: CPU, memory, disk utilisation
 
 **NVIDIA DCGM Exporter Configuration:**
 ```yaml
@@ -327,9 +327,9 @@ spec:
 | **Security** | Kubernetes RBAC isolates teams; Istio side-car enforces egress rules so training pods can reach only Ceph, Neptune and Cloud Storage. Secrets (tokens, keys) are mounted read-only. GKE Sandbox for untrusted workloads. |
 | **Monitoring** | NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and OSD queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress. |
 | **Scalability** | Cluster can expand to 64 nodes by updating the `replicas` field. If Ceph cannot meet read bandwidth (including if per-node read > 25-30 GB/s), a future upgrade to DAOS or Lustre is possible without pipeline changes. Horizontal Pod Autoscaler for supporting services. |
-| **Cost** | Torch Elastic permits use of spot GPU nodes; checkpoints every 15 min to avoid > 15 min loss. Weekly CronJob cleans NVMe caches older than 7 days. Cluster autoscaling with node auto-provisioning. Preemptible instances for 70-90% cost savings. |
+| **Cost** | Torch Elastic permits use of spot GPU nodes; checkpoints every 15 min to avoid > 15 min loss. Weekly CronJob cleans NVMe caches older than 7 days. Cluster autoscaling with node auto-provisioning and preemptible instances. |
 
-### 8.1. Cost Optimization Strategies
+### 8.1. Cost Optimisation Strategies
 
 **Preemptible Instance Configuration:**
 ```yaml
