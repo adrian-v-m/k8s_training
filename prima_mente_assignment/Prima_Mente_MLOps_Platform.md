@@ -109,12 +109,10 @@ flowchart TD
 | **Memory** | 1.6 TB RAM per node | Massive dataset caching and preprocessing |
 | **Local Storage** | 1 TB NVMe SSD per node | High-speed local data cache (7-14 GB/s) |
 | **Interconnect** | InfiniBand for inter-node communication | NCCL-optimised for gradient synchronisation |
-| **Network** | RDMA-capable with GPU Direct support | Direct GPU-to-GPU communication across nodes |
+
 
 **Network Configuration:**
 - NCCL with InfiniBand backend (`NCCL_IB_DISABLE=0`)
-- GPU Direct RDMA for zero-copy data transfers
-- Kubernetes networking configured for RDMA containers
 
 ## 2. Component breakdown
 
@@ -264,7 +262,7 @@ spec:
 - **Neptune.ai** – captures metrics, parameters, and small files with minimal code; the back-end handles thousands of concurrent runs.
 - **Vertex AI Model Registry + GCS** – separates heavy binary storage (Cloud Storage) from catalogue metadata (Registry), providing access control and deployment history.
 - **Artifact Registry** – central, signed image store via CI; every pipeline component image is immutable and scanned for vulnerabilities.
-- **Monitoring** | NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress.
+- **Monitoring** - NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress.
 
 ## 5. Performance optimisations
 
@@ -305,7 +303,7 @@ env:
 | **Authentication** | Kubeflow + Istio + Google IAP | User identity verification |
 | **Authorisation** | Kubernetes RBAC + Istio AuthPolicy | Resource access control |
 | **Network Security** | Istio service mesh + NetworkPolicies | Traffic encryption and isolation |
-| **Container Security** | GKE Sandbox (gVisor) + minimal images | Container runtime isolation |
+| **Container Security** | minimal images | Container runtime isolation |
 | **Data Security** | Encryption at rest + in transit | Data protection |
 | **Secret Management** | Kubernetes Secrets + rotation | Secure credential handling |
 
@@ -379,23 +377,12 @@ spec:
 | Topic | Implementation |
 |-------|----------------|
 | **CI/CD** | GitHub Actions build container, push to Artifact Registry, compile pipeline (`kfp dsl compile`), and upload new version. Image tag includes Git SHA for reproducibility. Container vulnerability scanning with Trivy. |
-| **Security** | Kubernetes RBAC isolates teams; Istio side-car enforces egress rules so training pods can reach only Ceph, Neptune and Cloud Storage. Secrets (tokens, keys) are mounted read-only. GKE Sandbox for untrusted workloads. |
+| **Security** | Kubernetes RBAC isolates teams; Istio side-car enforces egress rules so training pods can reach only Ceph, Neptune and Cloud Storage. Secrets (tokens, keys) are mounted read-only. |
 | **Monitoring** | NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and OSD queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress. |
 | **Scalability** | Cluster can expand to 64 nodes by updating the `replicas` field. If Ceph cannot meet read bandwidth (including if per-node read > 25-30 GB/s), a future upgrade to DAOS or Lustre is possible without pipeline changes. Horizontal Pod Autoscaler for supporting services. |
 | **Cost** | Torch Elastic permits use of spot GPU nodes; checkpoints every 15 min to avoid > 15 min loss. Weekly CronJob cleans NVMe caches older than 7 days. Cluster autoscaling with node auto-provisioning and preemptible instances. |
 
 ### 8.1. Cost optimisation strategies
-
-**Preemptible Instance Configuration:**
-```yaml
-nodeSelector:
-  cloud.google.com/gke-preemptible: "true"
-tolerations:
-- key: "cloud.google.com/gke-preemptible"
-  operator: "Equal"
-  value: "true"
-  effect: "NoSchedule"
-```
 
 **Automatic Cleanup CronJob:**
 ```yaml
