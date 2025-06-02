@@ -1,9 +1,20 @@
 # Large-Scale Training & Experimentation Platform
-*32-node H200 cluster, NVLink + InfiniBand, on-prem*
+*32-node H200 cluster, NVLink + InfiniBand, and the main assumption is that it's an on-prem cluster*
 
 ## 1. System Diagram
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#000000',
+    'primaryBorderColor': '#000000',
+    'lineColor': '#000000',
+    'background': '#f8f9fa'
+  }
+}}%%
+
 flowchart TD
     %% Control Plane
     subgraph CP["Kubeflow Control Plane"]
@@ -253,7 +264,7 @@ spec:
 - **Neptune.ai** – captures metrics, parameters, and small files with minimal code; the back-end handles thousands of concurrent runs.
 - **Vertex AI Model Registry + GCS** – separates heavy binary storage (Cloud Storage) from catalogue metadata (Registry), providing access control and deployment history.
 - **Artifact Registry** – central, signed image store via CI; every pipeline component image is immutable and scanned for vulnerabilities.
-- **Monitoring** | NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and OSD queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress.
+- **Monitoring** | NVIDIA DCGM exporter measures GPU errors, clock throttling, memory use. Ceph exporter measures client latency and queue length. Prometheus thresholds trigger alerts. All logs and metrics are visualised with Grafana. Custom dashboards for training progress.
 
 ## 5. Performance Optimisations
 
@@ -410,6 +421,17 @@ spec:
 ### Example Pipeline DAG (rendered by Kubeflow)
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#ffffff',
+    'primaryTextColor': '#000000',
+    'primaryBorderColor': '#000000',
+    'lineColor': '#000000',
+    'background': '#f8f9fa'
+  }
+}}%%
+
 flowchart TD
   A["🗂️ Data preparation<br/>dataset staging"] --> B["🔤 Tokenise and pack<br/>text preprocessing"]
   B --> C["📊 Data sharding<br/>32 NVMe PVs<br/>distributed storage"]
